@@ -17,6 +17,85 @@ from mlreco.utils.gnn.evaluation import DBSCAN_cluster_metrics2, assign_clusters
 from mlreco.utils.groups import process_group_data
 from .gnn import edge_model_construct
 
+
+class CombModel(torch.nn.Module):
+    """
+    Driver for combined edge and node prediction, assumed to be with PyTorch GNN model.
+    This class mostly acts as a wrapper that will hand the graph data to another model
+    
+    for use in config
+    model:
+        modules:
+            edge_model:
+                name: <name of edge model>
+                model_cfg:
+                    <dictionary of arguments to pass to model>
+                remove_compton: <True/False to remove compton clusters> (default True)
+    """
+    def __init__(self, cfg):
+        super(CombModel, self).__init__()
+        
+        if 'modules' in cfg:
+            self.model_config = cfg['modules']['clust_edge_model']
+        else:
+            self.model_config = cfg
+        
+        self.remove_compton = self.model_config.get('remove_compton', True)
+        self.compton_thresh = self.model_config.get('compton_thresh', 30)
+            
+        # extract the model to use
+        model = edge_model_construct(self.model_config.get('name', 'edge_only'))
+                     
+        # construct the model
+        self.predictor = model(self.model_config.get('model_cfg', {}))
+        
+    def forward(self, data):
+        """
+        inputs data:
+            data[0] - dbscan data
+        output:
+        dictionary, with
+            'edge_pred': torch.tensor with edge prediction weights
+        """
+        # get device
+        device = data[0].device
+        
+        # need to form graph, then pass through GNN
+        clusts = form_clusters_new(data[0])
+        
+        # remove compton clusters
+        # if no cluster fits this condition, return
+        if self.remove_compton:
+            selection = filter_compton(clusts, self.compton_thresh) # non-compton looking clusters
+            if not len(selection):
+                e = torch.tensor([], requires_grad=True)
+                e.to(device)
+                return {'edge_pred':[e]}
+
+            clusts = clusts[selection]
+        
+        # form graph
+        batch = get_cluster_batch(data[0], clusts)
+        edge_index = complete_graph(batch, device=device)
+        
+        if not edge_index.shape[0]:
+            e = torch.tensor([], requires_grad=True)
+            e.to(device)
+            return {'edge_pred':[e]}
+
+        # obtain vertex features
+        x = cluster_vtx_features(data[0], clusts, device=device)
+        # obtain edge features
+        e = cluster_edge_features(data[0], clusts, edge_index, device=device)
+        # get x batch
+        xbatch = torch.tensor(batch).to(device)
+        
+        # get output
+        out = self.edge_predictor(x, edge_index, e, xbatch)
+        
+        return out
+
+
 class EdgeModel(torch.nn.Module):
     """
     Driver for edge prediction, assumed to be with PyTorch GNN model.

@@ -1,16 +1,16 @@
-def edge_model_dict():
+def gnn_model_dict():
     """
-    returns dictionary of valid edge models
+    returns dictionary of valid gnn models
     """
     
-    from . import edge_attention
-    from . import edge_attention2
+    from . import attention
+    from . import attention2
     from . import edge_only
     from . import edge_node_only
     from . import full_edge_node_only
-    from . import edge_nnconv
-    from . import edge_econv
-    from . import edge_meta
+    from . import nnconv
+    from . import econv
+    from . import meta
     from . import dir_meta
     
     models = {
@@ -28,10 +28,10 @@ def edge_model_dict():
     return models
 
 
-def edge_model_construct(name):
-    models = edge_model_dict()
+def gnn_model_construct(name):
+    models = gnn_model_dict()
     if not name in models:
-        raise Exception("Unknown edge model name provided")
+        raise Exception("Unknown GNN model name provided")
     return models[name]
 
 
