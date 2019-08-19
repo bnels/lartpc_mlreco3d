@@ -14,14 +14,14 @@ def gnn_model_dict():
     from . import dir_meta
     
     models = {
-        "basic_attention" : edge_attention.BasicAttentionModel,
-        "basic_attention2": edge_attention2.BasicAttentionModel,
+        "basic_attention" : attention.BasicAttentionModel,
+        "basic_attention2": attention2.BasicAttentionModel,
         "edge_only" : edge_only.EdgeOnlyModel,
         "edge_node_only" : edge_node_only.EdgeNodeOnlyModel,
         "full_edge_node_only" : full_edge_node_only.FullEdgeNodeOnlyModel,
-        "nnconv" : edge_nnconv.NNConvModel,
-        "econv" : edge_econv.EdgeConvModel,
-        "emeta" : edge_meta.EdgeMetaModel,
+        "nnconv" : nnconv.NNConvModel,
+        "econv" : econv.EdgeConvModel,
+        "emeta" : meta.EdgeMetaModel,
         "dir_meta" : dir_meta.EdgeMetaModel
     }
     

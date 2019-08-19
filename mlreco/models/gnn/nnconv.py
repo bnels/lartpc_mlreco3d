@@ -7,7 +7,7 @@ import numpy as np
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d
 from torch_geometric.nn import MetaLayer, NNConv
 
-from .edge_pred import EdgeModel, BilinEdgeModel
+from .pred import EdgePredModel, BilinEdgePredModel, NodePredModel
 
 class NNConvModel(torch.nn.Module):
     """
@@ -62,9 +62,13 @@ class NNConvModel(torch.nn.Module):
         # final prediction layer
         pred_cfg = self.model_config.get('pred_model', 'basic')
         if pred_cfg == 'basic':
-            self.edge_predictor = MetaLayer(EdgeModel(noutput, self.edge_in, self.leak))
+            self.predictor = MetaLayer(EdgePredModel(noutput, self.edge_in, self.leak), 
+                                       NodePredModel(noutput, self.edge_in, self.leak)
+                                      )
         elif pred_cfg == 'bilin':
-            self.edge_predictor = MetaLayer(BilinEdgeModel(noutput, self.edge_in, self.leak))
+            self.predictor = MetaLayer(BilinEdgePredModel(noutput, self.edge_in, self.leak), 
+                                       NodePredModel(noutput, self.edge_in, self.leak)
+                                      )
         else:
             raise Exception('unrecognized prediction model: ' + pred_cfg)
             
@@ -89,6 +93,6 @@ class NNConvModel(torch.nn.Module):
         for i in range(self.num_mp):
             x = self.layer[i](x, edge_index, e)
         
-        x, e, u = self.edge_predictor(x, edge_index, e, u=None, batch=xbatch)
+        x, e, u = self.predictor(x, edge_index, e, u=None, batch=xbatch)
 
-        return {'edge_pred':[e]}
+        return {'edge_pred':[e], 'node_pred':[x]}

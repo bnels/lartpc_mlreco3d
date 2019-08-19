@@ -7,7 +7,7 @@ import numpy as np
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d
 from torch_geometric.nn import MetaLayer, EdgeConv
 
-from .edge_pred import EdgeModel, BilinEdgeModel
+from .pred import EdgePredModel, BilinEdgePredModel, NodePredModel
 
 class EdgeConvModel(torch.nn.Module):
     """

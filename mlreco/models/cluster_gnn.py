@@ -12,10 +12,11 @@ from mlreco.utils.gnn.primary import assign_primaries, analyze_primaries
 from mlreco.utils.gnn.network import complete_graph
 from mlreco.utils.gnn.compton import filter_compton
 from mlreco.utils.gnn.data import cluster_vtx_features, cluster_edge_features, edge_assignment, cluster_vtx_features_old
+from mlreco.utils.gnn.data import node_primary_assignment
 from mlreco.utils.gnn.evaluation import secondary_matching_vox_efficiency, secondary_matching_vox_efficiency3
-from mlreco.utils.gnn.evaluation import DBSCAN_cluster_metrics2, assign_clusters_UF
+from mlreco.utils.gnn.evaluation import DBSCAN_cluster_metrics2, assign_clusters_UF, primary_id_metrics
 from mlreco.utils.groups import process_group_data
-from .gnn import edge_model_construct
+from .gnn import gnn_model_construct
 
 
 class CombModel(torch.nn.Module):
@@ -36,7 +37,7 @@ class CombModel(torch.nn.Module):
         super(CombModel, self).__init__()
         
         if 'modules' in cfg:
-            self.model_config = cfg['modules']['clust_edge_model']
+            self.model_config = cfg['modules']['clust_model']
         else:
             self.model_config = cfg
         
@@ -44,7 +45,7 @@ class CombModel(torch.nn.Module):
         self.compton_thresh = self.model_config.get('compton_thresh', 30)
             
         # extract the model to use
-        model = edge_model_construct(self.model_config.get('name', 'edge_only'))
+        model = gnn_model_construct(self.model_config.get('name', 'edge_only'))
                      
         # construct the model
         self.predictor = model(self.model_config.get('model_cfg', {}))
@@ -91,106 +92,29 @@ class CombModel(torch.nn.Module):
         xbatch = torch.tensor(batch).to(device)
         
         # get output
-        out = self.edge_predictor(x, edge_index, e, xbatch)
-        
-        return out
-
-
-class EdgeModel(torch.nn.Module):
-    """
-    Driver for edge prediction, assumed to be with PyTorch GNN model.
-    This class mostly acts as a wrapper that will hand the graph data to another model
-    
-    for use in config
-    model:
-        modules:
-            edge_model:
-                name: <name of edge model>
-                model_cfg:
-                    <dictionary of arguments to pass to model>
-                remove_compton: <True/False to remove compton clusters> (default True)
-    """
-    def __init__(self, cfg):
-        super(EdgeModel, self).__init__()
-        
-        if 'modules' in cfg:
-            self.model_config = cfg['modules']['clust_edge_model']
-        else:
-            self.model_config = cfg
-        
-        self.remove_compton = self.model_config.get('remove_compton', True)
-        self.compton_thresh = self.model_config.get('compton_thresh', 30)
-            
-        # extract the model to use
-        model = edge_model_construct(self.model_config.get('name', 'edge_only'))
-                     
-        # construct the model
-        self.edge_predictor = model(self.model_config.get('model_cfg', {}))
-        
-        
-    def forward(self, data):
-        """
-        inputs data:
-            data[0] - dbscan data
-        output:
-        dictionary, with
-            'edge_pred': torch.tensor with edge prediction weights
-        """
-        # get device
-        device = data[0].device
-        
-        # need to form graph, then pass through GNN
-        clusts = form_clusters_new(data[0])
-        
-        # remove compton clusters
-        # if no cluster fits this condition, return
-        if self.remove_compton:
-            selection = filter_compton(clusts, self.compton_thresh) # non-compton looking clusters
-            if not len(selection):
-                e = torch.tensor([], requires_grad=True)
-                e.to(device)
-                return {'edge_pred':[e]}
-
-            clusts = clusts[selection]
-        
-        # form graph
-        batch = get_cluster_batch(data[0], clusts)
-        edge_index = complete_graph(batch, device=device)
-        
-        if not edge_index.shape[0]:
-            e = torch.tensor([], requires_grad=True)
-            e.to(device)
-            return {'edge_pred':[e]}
-
-        # obtain vertex features
-        x = cluster_vtx_features(data[0], clusts, device=device)
-        # obtain edge features
-        e = cluster_edge_features(data[0], clusts, edge_index, device=device)
-        # get x batch
-        xbatch = torch.tensor(batch).to(device)
-        
-        # get output
-        out = self.edge_predictor(x, edge_index, e, xbatch)
+        out = self.predictor(x, edge_index, e, xbatch)
         
         return out
     
     
-    
-class EdgeChannelLoss(torch.nn.Module):
+class CombChannelLoss(torch.nn.Module):
     """
-    Edge loss based on two channel output
+    Edge loss based on two channel output (off/on)
+    combined with node channel loss (non-primary/primary)
     """
     def __init__(self, cfg):
         # torch.nn.MSELoss(reduction='sum')
         # torch.nn.L1Loss(reduction='sum')
-        super(EdgeChannelLoss, self).__init__()
-        self.model_config = cfg['modules']['clust_edge_model']
+        super(CombChannelLoss, self).__init__()
+        self.model_config = cfg['modules']['clust_model']
         
         self.remove_compton = self.model_config.get('remove_compton', True)
         self.compton_thresh = self.model_config.get('compton_thresh', 30)
         
         self.reduction = self.model_config.get('reduction', 'mean')
         self.loss = self.model_config.get('loss', 'CE')
+        
+        self.node_wt = self.model_config.get('node_wt', 0.5)
         
         if self.loss == 'CE':
             self.lossfn = torch.nn.CrossEntropyLoss(reduction=self.reduction)
@@ -202,7 +126,7 @@ class EdgeChannelLoss(torch.nn.Module):
             raise Exception('unrecognized loss: ' + self.loss)
         
         
-    def forward(self, out, clusters, groups):
+    def forward(self, out, clusters, groups, primary):
         """
         out:
             dictionary output from GNN Model
@@ -215,11 +139,16 @@ class EdgeChannelLoss(torch.nn.Module):
         edge_ct = 0
         total_loss, total_acc = 0., 0.
         ari, ami, sbd, pur, eff = 0., 0., 0., 0., 0.
+        ppur, peff, spur, seff = 0., 0., 0., 0.
+        node_loss = 0.
+        edge_loss = 0.
         ngpus = len(clusters)
         for i in range(ngpus):
             edge_pred = out['edge_pred'][i]
+            node_pred = out['node_pred'][i]
             data0 = clusters[i]
             data1 = groups[i]
+            data2 = primary[i]
 
             device = data0.device
 
@@ -257,11 +186,21 @@ class EdgeChannelLoss(torch.nn.Module):
 
             # determine true assignments
             edge_assn = edge_assignment(edge_index, batch, group, device=device, dtype=torch.long)
-
             edge_assn = edge_assn.view(-1)
+            
+            node_assn = node_primary_assignment(data2, clusts, data1, device=device, dtype=torch.long)
+            node_assn = node_assn.view(-1)
 
             # total loss on batch
-            total_loss = self.lossfn(edge_pred, edge_assn)
+            edge_loss += self.lossfn(edge_pred, edge_assn)
+            node_loss += self.lossfn(node_pred, node_assn)
+            
+            # get fraction of assigned primaries that are correct
+            ppur0, peff0, spur0, seff0 = primary_id_metrics(node_pred, node_assn)
+            ppur += ppur0
+            peff += peff0
+            spur += spur0
+            seff += seff0
 
             # compute assigned clusters
             fe = edge_pred[1,:] - edge_pred[0,:]
@@ -279,6 +218,8 @@ class EdgeChannelLoss(torch.nn.Module):
             eff += eff0
 
             edge_ct += edge_index.shape[1]
+            
+        total_loss = (1 - self.node_wt) * edge_loss + self.node_wt * node_loss
         
         return {
             'ARI': ari/ngpus,
@@ -288,5 +229,11 @@ class EdgeChannelLoss(torch.nn.Module):
             'efficiency': eff/ngpus,
             'accuracy': total_acc/ngpus,
             'loss': total_loss/ngpus,
-            'edge_count': edge_ct
+            'node_loss': node_loss/ngpus,
+            'edge_loss': edge_loss/ngpus,
+            'edge_count': edge_ct,
+            'primary_pur': ppur/ngpus,
+            'primary_eff': peff/ngpus,
+            'secondary_pur': spur/ngpus,
+            'secondary_eff': seff/ngpus
         }

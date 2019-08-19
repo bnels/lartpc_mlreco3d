@@ -8,8 +8,8 @@ from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU,
 # Edge prediction modules
 
 # final prediction layer
-class EdgeModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, leak):
+class EdgePredModel(torch.nn.Module):
+    def __init__(self, node_in, edge_in, leak, nout=2):
         """
         Basic model for making edge predictions
         
@@ -17,8 +17,9 @@ class EdgeModel(torch.nn.Module):
             node_in - number of node features coming in
             edge_in - number of edge features coming in
             leak - leakiness of leakyrelus
+            nout - number of classes out (default 2)
         """
-        super(EdgeModel, self).__init__()
+        super(EdgePredModel, self).__init__()
 
         self.edge_pred_mlp = Seq(Lin(2*node_in + edge_in, 64),
                                  LeakyReLU(leak),
@@ -28,15 +29,15 @@ class EdgeModel(torch.nn.Module):
                                  LeakyReLU(leak),
                                  Lin(16,8),
                                  LeakyReLU(leak),
-                                 Lin(8,2)
+                                 Lin(8,nout)
                                 )
 
     def forward(self, src, dest, edge_attr, u, batch):
         return self.edge_pred_mlp(torch.cat([src, dest, edge_attr], dim=1))
     
     
-class BilinEdgeModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, leak):
+class BilinEdgePredModel(torch.nn.Module):
+    def __init__(self, node_in, edge_in, leak, nout=2):
         """
         Bilinear model for making edge predictions
         
@@ -44,8 +45,9 @@ class BilinEdgeModel(torch.nn.Module):
             node_in - number of node features coming in
             edge_in - number of edge features coming in
             leak - leakiness of leakyrelus
+            nout - number of classes out (default 2)
         """
-        super(BilinEdgeModel, self).__init__()
+        super(BilinEdgePredModel, self).__init__()
         
         self.bse = Bilinear(node_in, edge_in, 16, bias=True)
         self.bte = Bilinear(node_in, edge_in, 16, bias=True)
@@ -61,7 +63,7 @@ class BilinEdgeModel(torch.nn.Module):
             LeakyReLU(leak),
             Lin(32,16),
             LeakyReLU(leak),
-            Lin(16,2)
+            Lin(16, nout)
         )
         
     def forward(self, source, target, edge_attr, u, batch):
@@ -76,6 +78,39 @@ class BilinEdgeModel(torch.nn.Module):
         out = torch.cat([x, y, z], dim=1)
         out = self.mlp(out)
         return out
+
+    
+class NodePredModel(torch.nn.Module):
+    def __init__(self, node_in, edge_in, leak, nout=2):
+        """
+        Basic model for making node predictions
+        
+        parameters:
+            node_in - number of node features coming in
+            edge_in - number of edge features coming in
+            leak - leakiness of leakyrelus
+            nout - number of classes out (default 2)
+        """
+        super(NodePredModel, self).__init__()
+
+        self.pred_mlp = Seq(Lin(node_in, 32),
+                             LeakyReLU(leak),
+                             Lin(32, 32),
+                             LeakyReLU(leak),
+                             Lin(32, 16),
+                             LeakyReLU(leak),
+                             Lin(16,nout)
+                            )
+
+    def forward(self, x, edge_index, edge_attr, u, batch):
+        # x: [N, F_x], where N is the number of nodes.
+        # edge_index: [2, E] with max entry N - 1.
+        # edge_attr: [E, F_e]
+        # u: [B, F_u]
+        # batch: [N] with max entry B - 1.
+        return self.pred_mlp(x)
+    
+    
     
     
     

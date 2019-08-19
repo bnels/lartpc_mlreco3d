@@ -39,7 +39,7 @@ def model_dict():
         # Iterative Edge Model
         "iter_edge_model": (iter_edge_gnn.IterativeEdgeModel, iter_edge_gnn.IterEdgeChannelLoss),
         # full cluster model
-        "clust_edge_model": (cluster_gnn.EdgeModel, cluster_gnn.EdgeChannelLoss),
+        "clust_model": (cluster_gnn.CombModel, cluster_gnn.CombChannelLoss),
         # direction model
         "clust_dir_model": (cluster_dir_gnn.EdgeModel, cluster_dir_gnn.EdgeChannelLoss),
     }

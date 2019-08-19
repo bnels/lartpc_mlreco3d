@@ -135,3 +135,44 @@ def DBSCAN_cluster_metrics2(matched, clusters, group):
     pur, eff = purity_efficiency(pred_vox, true_vox)
     return ari, ami, sbd, pur, eff
     
+    
+def primary_id_metrics(node_pred, node_assn, thresh=0.0):
+    """
+    return purity and efficiency for primary identification
+    thresh is threshold for node_pred to be considered primary
+    return:
+        primary purity
+        primary efficiency
+        secondary purity
+        secondary efficiency
+    """
+    if isinstance(node_pred, torch.Tensor):
+        node_pred = node_pred.detach().cpu().numpy()
+    if isinstance(node_assn, torch.Tensor):
+        node_assn = node_assn.detach().cpu().numpy()
+        
+    node_thresh = (node_pred[:,1] - node_pred[:,0]) > thresh
+    
+    # primary metrics
+    nprimary = sum(node_assn)
+    npint = sum(np.logical_and(node_thresh, node_assn))
+    npred_primary = sum(node_thresh)
+    peff = npint * 1.0 / nprimary
+    ppur = npint * 1.0 / npred_primary
+    
+    # secondary metrics
+    nsecondary = len(node_assn) - nprimary
+    nsint = sum(np.logical_and(node_thresh == False, node_assn == False))
+    npred_secondary = len(node_thresh) - npred_primary
+    seff = nsint * 1.0 / nsecondary
+    spur = nsint * 1.0 / npred_secondary
+    
+    return ppur, peff, spur, seff
+    
+    
+    
+    
+    
+    
+    
+    

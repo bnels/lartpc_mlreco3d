@@ -9,6 +9,7 @@ import scipy as sp
 from mlreco.utils.ppn import contains
 from mlreco.utils.gnn.cluster import get_cluster_label, get_cluster_batch
 from mlreco.utils.gnn.compton import filter_compton
+import torch
 
 
 def get_em_primary_info(particle_v, meta, point_type="3d", min_voxel_count=7, min_energy_deposit=10):
@@ -94,9 +95,10 @@ def assign_primaries(primaries, clusts, data, use_labels=False, max_dist=None, c
     for each EM primary assign closest cluster that matches batch and group
     data should contain groups of voxels
     """
-    
-    primaries = primaries.cpu().detach().numpy()
-    data = data.cpu().detach().numpy()
+    if isinstance(primaries, torch.Tensor):
+        primaries = primaries.cpu().detach().numpy()
+    if isinstance(data, torch.Tensor):
+        data = data.cpu().detach().numpy()
     
     #first remove compton-like clusters from list
     selection = filter_compton(clusts, compton_thresh) # non-compton looking clusters

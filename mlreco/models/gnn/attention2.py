@@ -8,7 +8,7 @@ import torch
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d
 from torch_geometric.nn import MetaLayer, GATConv, AGNNConv
 
-from .edge_pred import EdgeModel, BilinEdgeModel
+from .pred import EdgePredModel, BilinEdgePredModel, NodePredModel
 
 class BasicAttentionModel(torch.nn.Module):
     """
@@ -51,9 +51,13 @@ class BasicAttentionModel(torch.nn.Module):
         # final prediction layer
         pred_cfg = self.model_config.get('pred_model', 'basic')
         if pred_cfg == 'basic':
-            self.edge_predictor = MetaLayer(EdgeModel(2*self.node_in, self.edge_in, self.leak))
+            self.predictor = MetaLayer(EdgePredModel(2*self.node_in, self.edge_in, self.leak), 
+                                       NodePredModel(2*self.node_in, self.edge_in, self.leak)
+                                      )
         elif pred_cfg == 'bilin':
-            self.edge_predictor = MetaLayer(BilinEdgeModel(2*self.node_in, self.edge_in, self.leak))
+            self.predictor = MetaLayer(BilinEdgePredModel(2*self.node_in, self.edge_in, self.leak), 
+                                       NodePredModel(2*self.node_in, self.edge_in, self.leak)
+                                      )
         else:
             raise Exception('unrecognized prediction model: ' + pred_cfg)
         
@@ -79,6 +83,6 @@ class BasicAttentionModel(torch.nn.Module):
             x = self.attn[i](x, edge_index)
             x = self.lin[i](x)
         
-        x, e, u = self.edge_predictor(x, edge_index, e, u=None, batch=xbatch)
+        x, e, u = self.predictor(x, edge_index, e, u=None, batch=xbatch)
 
-        return {'edge_pred':[e]}
+        return {'edge_pred':[e], 'node_pred':[x]}

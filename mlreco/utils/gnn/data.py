@@ -1,6 +1,7 @@
 # creates inputs to GNN networks
 import torch
 from mlreco.utils.gnn.cluster import get_cluster_centers, get_cluster_voxels, get_cluster_features, get_cluster_energies, get_cluster_dirs
+from .primary import assign_primaries
 import numpy as np
 import scipy as sp
 
@@ -165,9 +166,22 @@ def edge_assignment(edge_index, batches, groups, cuda=True, dtype=torch.float, b
     if binary:
         # transform to -1,+1 instead of 0,1
         edge_assn = 2*edge_assn - 1
-    if not device is None:
+    if device is not None:
         edge_assn = edge_assn.to(device)
     elif cuda:
         edge_assn = edge_assn.cuda()
     return edge_assn
     
+    
+def node_primary_assignment(primaries, clusts, groups, dtype=torch.long, binary=False, device=None, cuda=True):
+    
+    primaries_true = assign_primaries(primaries, clusts, groups, use_labels=True)
+    node_assn = torch.tensor([i in primaries_true for i in range(len(clusts))], dtype=dtype, requires_grad=False)
+    if binary:
+        # transporm to -1, +1 instead of 0,1
+        node_addn = 2*node_assn - 1
+    if device is not None:
+        node_assn = node_assn.to(device)
+    elif cuda:
+        node_assn = node_assn.cuda()
+    return node_assn

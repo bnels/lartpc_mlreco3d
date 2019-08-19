@@ -14,7 +14,7 @@ from mlreco.utils.gnn.data import cluster_vtx_features, cluster_edge_features, e
 from mlreco.utils.gnn.evaluation import secondary_matching_vox_efficiency2
 from mlreco.utils.gnn.evaluation import DBSCAN_cluster_metrics2
 from mlreco.utils.groups import process_group_data
-from .gnn import edge_model_construct
+from .gnn import gnn_model_construct
 
 class IterativeEdgeModel(torch.nn.Module):
     """
@@ -39,7 +39,7 @@ class IterativeEdgeModel(torch.nn.Module):
         self.compton_thresh = self.model_config.get('compton_thresh', 30)
             
         # extract the model to use
-        model = edge_model_construct(self.model_config.get('name', 'edge_only'))
+        model = gnn_model_construct(self.model_config.get('name', 'edge_only'))
             
         # construct the model
         self.edge_predictor = model(self.model_config.get('model_cfg', {}))

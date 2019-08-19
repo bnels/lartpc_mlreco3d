@@ -8,7 +8,7 @@ import torch
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d, Bilinear
 from torch_geometric.nn import MetaLayer, GATConv, AGNNConv, NNConv
 
-from .edge_pred import EdgeModel as EdgePredModel, BilinEdgeModel as BilinEdgePredModel
+from .pred import EdgePredModel, BilinEdgePredModel, NodePredModel
       
         
         

@@ -15,7 +15,7 @@ from mlreco.utils.gnn.evaluation import secondary_matching_vox_efficiency
 from mlreco.utils.gnn.features.utils import edge_labels_to_node_labels
 from mlreco.utils.groups import process_group_data
 from mlreco.utils.metrics import SBD
-from .gnn import edge_model_construct
+from .gnn import gnn_model_construct
 
 from mlreco.utils.gnn.features.core import generate_graph
 
@@ -48,7 +48,7 @@ class FullEdgeModel(torch.nn.Module):
         self.remove_compton = self.model_config.get('remove_compton', True)
             
         # extract the model to use
-        model = edge_model_construct(self.model_config.get('name', 'edge_only'))
+        model = gnn_model_construct(self.model_config.get('name', 'edge_only'))
                      
         # construct the model
         self.edge_predictor = model(self.model_config.get('model_cfg', {}))
