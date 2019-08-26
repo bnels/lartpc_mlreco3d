@@ -34,6 +34,7 @@ class NNConvModel(torch.nn.Module):
         
         self.aggr = self.model_config.get('aggr', 'add')
         self.leak = self.model_config.get('leak', 0.1)
+        self.use_bn = self.model_config.get('batch_norm', False)
         
         # perform batch normalization
         self.bn_node = BatchNorm1d(self.node_in)
@@ -43,6 +44,8 @@ class NNConvModel(torch.nn.Module):
         
         self.nn = torch.nn.ModuleList()
         self.layer = torch.nn.ModuleList()
+        if self.use_bn:
+            self.bn = torch.nn.ModuleList() # batch norms
         ninput = self.node_in
         noutput = max(2*self.node_in, 32)
         for i in range(self.num_mp):
@@ -57,6 +60,10 @@ class NNConvModel(torch.nn.Module):
             self.layer.append(
                 NNConv(ninput, noutput, self.nn[i], aggr=self.aggr)
             )
+            if self.use_bn:
+                self.bn.append(
+                    BatchNorm1d(noutput)
+                )
             ninput = noutput
 
         # final prediction layer
@@ -92,6 +99,8 @@ class NNConvModel(torch.nn.Module):
         # go through layers
         for i in range(self.num_mp):
             x = self.layer[i](x, edge_index, e)
+            if self.use_bn:
+                x = self.bn[i](x) # apply batch norm
         
         x, e, u = self.predictor(x, edge_index, e, u=None, batch=xbatch)
 

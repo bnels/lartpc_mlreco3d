@@ -36,17 +36,28 @@ class BasicAttentionModel(torch.nn.Module):
         
         self.bn_node = BatchNorm1d(self.node_in)
         self.bn_edge = BatchNorm1d(self.edge_in)
+        self.use_bn = self.model_config.get('batch_norm', False)
         
         self.num_mp = self.model_config.get('num_mp', 3)
         
         # first lift node features
-        self.lin0 = Lin(self.node_in, 2*self.node_in)
+        self.lin0 = Seq(
+            Lin(self.node_in, 2*self.node_in),
+            LeakyReLU(self.leak, inplace=True),
+            BatchNorm1d(2*self.node_in) if self.use_bn else Seq()
+        )
         
         self.attn = torch.nn.ModuleList()
         self.lin = torch.nn.ModuleList()
         for i in range(self.num_mp):
             self.attn.append(AGNNConv())
-            self.lin.append(Lin(2*self.node_in, 2*self.node_in))
+            self.lin.append(Seq(
+                Lin(2*self.node_in, 4*self.node_in),
+                LeakyReLU(self.leak, inplace=True),
+                Lin(4*self.node_in, 2*self.node_in),
+                LeakyReLU(self.leak, inplace=True),
+                BatchNorm1d(2*self.node_in) if self.use_bn else Seq()
+            ))
     
         # final prediction layer
         pred_cfg = self.model_config.get('pred_model', 'basic')
