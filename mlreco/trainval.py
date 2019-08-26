@@ -138,8 +138,8 @@ class trainval(object):
             #if 'analysis_keys' in self._model_config:
             #    for key in self._model_config['analysis_keys']:
             #        res[key] = [s.cpu().detach().numpy() for s in result[self._model_config['analysis_keys'][key]]]
-            for key in result.keys():
-                res[key] = [s.cpu().detach().numpy() for s in result[key]]
+            #for key in result.keys():
+            #    res[key] = [s.cpu().detach().numpy() for s in result[key]]
             return res
 
     def initialize(self):

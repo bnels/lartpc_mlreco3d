@@ -11,7 +11,7 @@ from mlreco.utils.gnn.cluster import get_cluster_batch, get_cluster_label, form_
 from mlreco.utils.gnn.primary import assign_primaries, analyze_primaries
 from mlreco.utils.gnn.network import complete_graph
 from mlreco.utils.gnn.compton import filter_compton
-from mlreco.utils.gnn.data import cluster_vtx_features, cluster_edge_features, edge_assignment, cluster_vtx_features_old
+from mlreco.utils.gnn.data import cluster_vtx_features, cluster_edge_features, edge_assignment
 from mlreco.utils.gnn.data import node_primary_assignment
 from mlreco.utils.gnn.evaluation import secondary_matching_vox_efficiency, secondary_matching_vox_efficiency3
 from mlreco.utils.gnn.evaluation import DBSCAN_cluster_metrics2, assign_clusters_UF, primary_id_metrics

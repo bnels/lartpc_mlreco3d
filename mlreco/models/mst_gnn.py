@@ -13,7 +13,7 @@ from mlreco.utils.gnn.data import edge_features, edge_assignment
 from mlreco.utils.gnn.features.utils import edge_labels_to_node_labels
 from mlreco.utils.groups import process_group_data
 from mlreco.utils.metrics import SBD, AMI, ARI, purity_efficiency
-from .gnn import edge_model_construct
+from .gnn import gnn_model_construct
 
 from mlreco.utils.gnn.features.core import generate_graph
 
@@ -45,6 +45,9 @@ class MSTEdgeModel(torch.nn.Module):
             
         # only use points with EM segmentation label
         self.em_only = self.model_config.get('em_only', False)
+        
+        # use voxel locations as additional features - adds another 3 features
+        self.vox_loc = self.model_config.get('vox_loc', False)
             
         
         # Optional UResNet
@@ -88,7 +91,7 @@ class MSTEdgeModel(torch.nn.Module):
 
             
         # extract the model to use
-        model = edge_model_construct(self.model_config.get('name', 'edge_only'))
+        model = gnn_model_construct(self.model_config.get('name', 'edge_only'))
                      
         # construct the model
         self.edge_predictor = model(self.model_config.get('model_cfg', {}))
@@ -127,6 +130,10 @@ class MSTEdgeModel(torch.nn.Module):
             x = self.transform(data0)
         else:
             x = energy.float()
+            
+        if self.vox_loc:
+            x = torch.cat([x, voxels.float()], 1)
+        
         
         # construct graph from Delaunay triangulation
         vox_np = voxels.detach().cpu().numpy()
@@ -145,7 +152,7 @@ class MSTEdgeModel(torch.nn.Module):
         return {
             'complex' : X,
             'edges'   : edge_index,
-            'edge_pred' : out
+            **out
         }
     
     
@@ -204,7 +211,7 @@ class MSTEdgeChannelLoss(torch.nn.Module):
         
         data_grps = data0[0]
         data_seg = data1[0]
-        edge_pred = out['edge_pred'][0][0]
+        edge_pred = out['edge_pred'][0]
         X = out['complex']
         edge_index = out['edges']
         
@@ -235,7 +242,10 @@ class MSTEdgeChannelLoss(torch.nn.Module):
             
         batch = data_grps[:,-2] # get batch from data
         group = data_grps[:,-1] # get gouprs from data
-        edge_assn = edge_assignment(active_edge_index, batch, group, cuda=False, dtype=torch.long, device=dev)
+        edge_assn = edge_assignment(active_edge_index, batch, group, dtype=torch.long, device=dev)
+        edge_off = sum(edge_assn == 0).item()
+        edge_on  = sum(edge_assn == 1).item()
+        print("true off: ", edge_off, "   true on: ", edge_on)
         
         # 3. compute loss, only on critical edges
         # extract critical edges
@@ -269,6 +279,8 @@ class MSTEdgeChannelLoss(torch.nn.Module):
         ari = ARI(clusts, group)
         pur, eff = purity_efficiency(clusts, group)
         
+        edge_ct = edge_index.shape[1]
+        
         return {
             'SBD' : sbd,
             'AMI' : ami,
@@ -277,5 +289,6 @@ class MSTEdgeChannelLoss(torch.nn.Module):
             'efficiency': eff,
             'accuracy': ari,
             'loss': loss,
+            'edge_count': edge_ct,
             **loss_terms
         }
