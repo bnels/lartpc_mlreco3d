@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d, Bilinear
+from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d, Bilinear, Identity
 
 # Edge prediction modules
 
@@ -78,6 +78,53 @@ class BilinEdgePredModel(torch.nn.Module):
         out = torch.cat([x, y, z], dim=1)
         out = self.mlp(out)
         return out
+    
+
+class CombEdgePredModel(torch.nn.Module):
+    def __init__(self, node_in, edge_in, leak, nout=2, nfeat=32, use_bn=True):
+        """
+        Combined model for making edge predictions
+        
+        parameters:
+            node_in - number of node features coming in
+            edge_in - number of edge features coming in
+            leak - leakiness of leakyrelus
+            nout - number of classes out (default 2)
+        """
+        super(CombEdgePredModel, self).__init__()
+        
+        
+        self.bilin = Bilinear(node_in, edge_in, nfeat, bias=True)
+        self.elin = Lin(edge_in, nfeat)
+        self.nlin = Lin(node_in, nfeat)
+        
+        self.mlp = Seq(
+            BatchNorm1d(nfeat) if use_bn else Identity(),
+            Lin(nfeat, nfeat*2),
+            LeakyReLU(leak, inplace=True),
+            BatchNorm1d(nfeat*2) if use_bn else Identity(),
+            Lin(nfeat*2, nfeat),
+            LeakyReLU(leak, inplace=True),
+            BatchNorm1d(nfeat) if use_bn else Identity(),
+            Lin(nfeat,nfeat//2),
+            LeakyReLU(leak, inplace=True),
+            BatchNorm1d(nfeat//2) if use_bn else Identity(),
+            Lin(nfeat//2, nfeat//4),
+            LeakyReLU(leakinplace=True),
+            BatchNorm1d(nfeat//4) if use_bn else Identity(),
+            Lin(nfeat//4, nout)
+        )
+        
+    def forward(self, source, target, edge_attr, u, batch):
+        # two bilinear forms
+        x = self.bilin(source, edge_attr) + self.bilin(target, edge_attr)
+        # add edge features
+        x = x + self.elin(edge_attr)
+        # add node features
+        x = x + self.nlin(source) + self.nlin(target)
+        
+        # pass through MLP
+        return self.mlp(x)
 
     
 class NodePredModel(torch.nn.Module):

@@ -2,6 +2,7 @@
 import numpy as np
 import torch
 from mlreco.utils.metrics import SBD, AMI, ARI, purity_efficiency
+import time
 
 
 def assign_clusters(edge_index, edge_label, primaries, others, n):
@@ -129,10 +130,19 @@ def DBSCAN_cluster_metrics2(matched, clusters, group):
     """
     pred_vox = cluster_to_voxel_label(matched, clusters)
     true_vox = cluster_to_voxel_label(group, clusters)
+    #t = time.time()
     ari = ARI(pred_vox, true_vox)
+    #print('ARI time = {}'.format(time.time() - t))
+    #t = time.time()
     ami = AMI(pred_vox, true_vox)
+    #print('AMI time = {}'.format(time.time() - t))
+    #t = time.time()
     sbd = SBD(pred_vox, true_vox)
+    #print('SBD time = {}'.format(time.time() - t))
+    #t = time.time()
     pur, eff = purity_efficiency(pred_vox, true_vox)
+    #print('P/E time = {}'.format(time.time() - t))
+    #t = time.time()
     return ari, ami, sbd, pur, eff
     
     
@@ -157,15 +167,15 @@ def primary_id_metrics(node_pred, node_assn, thresh=0.0):
     nprimary = sum(node_assn)
     npint = sum(np.logical_and(node_thresh, node_assn))
     npred_primary = sum(node_thresh)
-    peff = npint * 1.0 / nprimary
-    ppur = npint * 1.0 / npred_primary
+    peff = npint * 1.0 / max(nprimary, 1)
+    ppur = npint * 1.0 / max(npred_primary, 1)
     
     # secondary metrics
     nsecondary = len(node_assn) - nprimary
     nsint = sum(np.logical_and(node_thresh == False, node_assn == False))
     npred_secondary = len(node_thresh) - npred_primary
-    seff = nsint * 1.0 / nsecondary
-    spur = nsint * 1.0 / npred_secondary
+    seff = nsint * 1.0 / max(nsecondary, 1)
+    spur = nsint * 1.0 / max(npred_secondary, 1)
     
     return ppur, peff, spur, seff
     

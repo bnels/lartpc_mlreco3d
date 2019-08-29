@@ -115,9 +115,11 @@ class CombChannelLoss(torch.nn.Module):
         self.loss = self.model_config.get('loss', 'CE')
         
         self.node_wt = self.model_config.get('node_wt', 0.5)
+        on_wt = self.model_config.get('on_wt', 1.0)
+        weight = torch.tensor([1.0, on_wt], dtype=torch.float)
         
         if self.loss == 'CE':
-            self.lossfn = torch.nn.CrossEntropyLoss(reduction=self.reduction)
+            self.lossfn = torch.nn.CrossEntropyLoss(weight=weight, reduction=self.reduction)
         elif self.loss == 'MM':
             p = self.model_config.get('p', 1)
             margin = self.model_config.get('margin', 1.0)
@@ -142,6 +144,10 @@ class CombChannelLoss(torch.nn.Module):
         ppur, peff, spur, seff = 0., 0., 0., 0.
         node_loss = 0.
         edge_loss = 0.
+        # count edges on/off
+        true_on, true_off, est_on, est_off = 0, 0, 0, 0
+        # number of true and assigned clusters
+        ntrue, nfound = 0, 0
         ngpus = len(clusters)
         for i in range(ngpus):
             edge_pred = out['edge_pred'][i]
@@ -183,10 +189,12 @@ class CombChannelLoss(torch.nn.Module):
                 continue
                 
             group = get_cluster_label(data_grp, clusts)
+            ntrue += len(np.unique(group))
 
             # determine true assignments
             edge_assn = edge_assignment(edge_index, batch, group, device=device, dtype=torch.long)
             edge_assn = edge_assn.view(-1)
+            true_on += torch.sum(edge_assn).detach().cpu().item()
             
             node_assn = node_primary_assignment(data2, clusts, data1, device=device, dtype=torch.long)
             node_assn = node_assn.view(-1)
@@ -203,8 +211,10 @@ class CombChannelLoss(torch.nn.Module):
             seff += seff0
 
             # compute assigned clusters
-            fe = edge_pred[1,:] - edge_pred[0,:]
+            fe = edge_pred[:,1] - edge_pred[:,0]
             cs = assign_clusters_UF(edge_index, fe, len(clusts), thresh=0.0)
+            est_on += torch.sum(fe > 0).detach().cpu().item()
+            nfound += len(np.unique(cs))
 
             ari0, ami0, sbd0, pur0, eff0 = DBSCAN_cluster_metrics2(
                 cs,
@@ -227,11 +237,15 @@ class CombChannelLoss(torch.nn.Module):
             'SBD': sbd/ngpus,
             'purity': pur/ngpus,
             'efficiency': eff/ngpus,
-            'accuracy': total_acc/ngpus,
+            'accuracy': sbd/ngpus, # sbd
             'loss': total_loss/ngpus,
             'node_loss': node_loss/ngpus,
             'edge_loss': edge_loss/ngpus,
             'edge_count': edge_ct,
+            'true_on': true_on,
+            'est_on': est_on,
+            'true_clusts': ntrue,
+            'est_clusts': nfound,
             'primary_pur': ppur/ngpus,
             'primary_eff': peff/ngpus,
             'secondary_pur': spur/ngpus,

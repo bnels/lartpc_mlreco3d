@@ -9,6 +9,7 @@ def gnn_model_dict():
     from . import edge_node_only
     from . import full_edge_node_only
     from . import nnconv
+    from . import nnconv_edge
     from . import econv
     from . import meta
     from . import dir_meta
@@ -20,6 +21,7 @@ def gnn_model_dict():
         "edge_node_only" : edge_node_only.EdgeNodeOnlyModel,
         "full_edge_node_only" : full_edge_node_only.FullEdgeNodeOnlyModel,
         "nnconv" : nnconv.NNConvModel,
+        "nnconv_edge" : nnconv_edge.NNConvModel,
         "econv" : econv.EdgeConvModel,
         "emeta" : meta.EdgeMetaModel,
         "dir_meta" : dir_meta.EdgeMetaModel

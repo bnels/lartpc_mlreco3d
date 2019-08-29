@@ -5,7 +5,7 @@ from __future__ import print_function
 import torch
 import numpy as np
 import torch
-from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d
+from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU, Dropout, BatchNorm1d, Identity
 from torch_geometric.nn import MetaLayer, GATConv, AGNNConv
 
 from .pred import EdgePredModel, BilinEdgePredModel, NodePredModel
@@ -44,7 +44,7 @@ class BasicAttentionModel(torch.nn.Module):
         self.lin0 = Seq(
             Lin(self.node_in, 2*self.node_in),
             LeakyReLU(self.leak, inplace=True),
-            BatchNorm1d(2*self.node_in) if self.use_bn else Seq()
+            BatchNorm1d(2*self.node_in) if self.use_bn else Identity()
         )
         
         self.attn = torch.nn.ModuleList()
@@ -56,7 +56,7 @@ class BasicAttentionModel(torch.nn.Module):
                 LeakyReLU(self.leak, inplace=True),
                 Lin(4*self.node_in, 2*self.node_in),
                 LeakyReLU(self.leak, inplace=True),
-                BatchNorm1d(2*self.node_in) if self.use_bn else Seq()
+                BatchNorm1d(2*self.node_in) if self.use_bn else Identity()
             ))
     
         # final prediction layer
