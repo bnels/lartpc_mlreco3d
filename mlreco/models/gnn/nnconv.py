@@ -35,10 +35,11 @@ class NNConvModel(torch.nn.Module):
         self.aggr = self.model_config.get('aggr', 'add')
         self.leak = self.model_config.get('leak', 0.1)
         self.use_bn = self.model_config.get('batch_norm', False)
+        bn_momentum = self.model_config.get('batch_norm_momentum', 0.1)
         
         # perform batch normalization
-        self.bn_node = BatchNorm1d(self.node_in)
-        self.bn_edge = BatchNorm1d(self.edge_in)
+        self.bn_node = BatchNorm1d(self.node_in, momentum=bn_momentum)
+        self.bn_edge = BatchNorm1d(self.edge_in, momentum=bn_momentum)
         
         self.num_mp = self.model_config.get('num_mp', 3)
         
@@ -62,7 +63,7 @@ class NNConvModel(torch.nn.Module):
             )
             if self.use_bn:
                 self.bn.append(
-                    BatchNorm1d(noutput)
+                    BatchNorm1d(noutput, momentum=bn_momentum)
                 )
             ninput = noutput
 

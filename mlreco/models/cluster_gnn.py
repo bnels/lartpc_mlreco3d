@@ -96,6 +96,21 @@ class CombModel(torch.nn.Module):
         
         return out
     
+def get_mst_inds(edge_index, edge_wt, n):
+    """
+    Get edges in MST from edge_index
+    """
+    from topologylayer.functional.persistence import getEdgesUF_raw
+    
+    edges = edge_index.detach().cpu().numpy()
+    edges = edges.T # transpose
+    edges = edges.flatten()
+    
+    val = edge_wt.detach().cpu().numpy()
+    
+    mst_edges = getEdgesUF_raw(edges, val, n)
+    return mst_edges
+    
     
 class CombChannelLoss(torch.nn.Module):
     """
@@ -117,13 +132,19 @@ class CombChannelLoss(torch.nn.Module):
         self.node_wt = self.model_config.get('node_wt', 0.5)
         on_wt = self.model_config.get('on_wt', 1.0)
         weight = torch.tensor([1.0, on_wt], dtype=torch.float)
+        # parameters for MST
+        self.mst_wt = self.model_config.get('mst_wt', 0.0)
+        mst_on_wt = self.model_config.get('mst_on_wt', on_wt)
+        mst_weight = torch.tensor([1.0, mst_on_wt], dtype=torch.float)
         
         if self.loss == 'CE':
             self.lossfn = torch.nn.CrossEntropyLoss(weight=weight, reduction=self.reduction)
+            self.lossmst = torch.nn.CrossEntropyLoss(weight=mst_weight, reduction=self.reduction)
         elif self.loss == 'MM':
             p = self.model_config.get('p', 1)
             margin = self.model_config.get('margin', 1.0)
             self.lossfn = torch.nn.MultiMarginLoss(p=p, margin=margin, reduction=self.reduction)
+            self.lossmst = torch.nn.MultiMarginLoss(p=p, margin=margin, reduction=self.reduction)
         else:
             raise Exception('unrecognized loss: ' + self.loss)
         
@@ -140,6 +161,7 @@ class CombChannelLoss(torch.nn.Module):
         """
         edge_ct = 0
         total_loss, total_acc = 0., 0.
+        mst_loss = 0.
         ari, ami, sbd, pur, eff = 0., 0., 0., 0., 0.
         ppur, peff, spur, seff = 0., 0., 0., 0.
         node_loss = 0.
@@ -203,6 +225,7 @@ class CombChannelLoss(torch.nn.Module):
             edge_loss += self.lossfn(edge_pred, edge_assn)
             node_loss += self.lossfn(node_pred, node_assn)
             
+            
             # get fraction of assigned primaries that are correct
             ppur0, peff0, spur0, seff0 = primary_id_metrics(node_pred, node_assn)
             ppur += ppur0
@@ -215,6 +238,13 @@ class CombChannelLoss(torch.nn.Module):
             cs = assign_clusters_UF(edge_index, fe, len(clusts), thresh=0.0)
             est_on += torch.sum(fe > 0).detach().cpu().item()
             nfound += len(np.unique(cs))
+            
+            if self.mst_wt > 0:
+                # get active edges
+                mst_inds = get_mst_inds(edge_index, fe, len(clusts))
+                mst_pred = edge_pred[mst_inds]
+                mst_assn = edge_assn[mst_inds]
+                mst_loss += self.lossmst(mst_pred, mst_assn)
 
             ari0, ami0, sbd0, pur0, eff0 = DBSCAN_cluster_metrics2(
                 cs,
@@ -229,7 +259,8 @@ class CombChannelLoss(torch.nn.Module):
 
             edge_ct += edge_index.shape[1]
             
-        total_loss = (1 - self.node_wt) * edge_loss + self.node_wt * node_loss
+        total_loss = (1 - self.node_wt) * ((1 - self.mst_wt) * edge_loss + self.mst_wt * mst_loss) +\
+            self.node_wt * node_loss
         
         return {
             'ARI': ari/ngpus,
@@ -241,6 +272,7 @@ class CombChannelLoss(torch.nn.Module):
             'loss': total_loss/ngpus,
             'node_loss': node_loss/ngpus,
             'edge_loss': edge_loss/ngpus,
+            'mst_loss':  mst_loss/ngpus,
             'edge_count': edge_ct,
             'true_on': true_on,
             'est_on': est_on,

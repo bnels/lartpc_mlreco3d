@@ -13,6 +13,7 @@ def gnn_model_dict():
     from . import econv
     from . import meta
     from . import dir_meta
+    from . import edge_node_bilinear
     
     models = {
         "basic_attention" : attention.BasicAttentionModel,
@@ -24,7 +25,8 @@ def gnn_model_dict():
         "nnconv_edge" : nnconv_edge.NNConvModel,
         "econv" : econv.EdgeConvModel,
         "emeta" : meta.EdgeMetaModel,
-        "dir_meta" : dir_meta.EdgeMetaModel
+        "dir_meta" : dir_meta.EdgeMetaModel,
+        "en_bilin" : edge_node_bilinear.EdgeNodeOnlyModel
     }
     
     return models

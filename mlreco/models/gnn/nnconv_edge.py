@@ -10,7 +10,7 @@ from torch_geometric.nn import MetaLayer, NNConv
 from .pred import EdgePredModel, BilinEdgePredModel, NodePredModel, CombEdgePredModel
 
 class EdgeModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, edge_out, leak):
+    def __init__(self, node_in, edge_in, edge_out, leak, bn_momentum):
         super(EdgeModel, self).__init__()
 
         nin = 2*node_in + edge_in
@@ -19,13 +19,13 @@ class EdgeModel(torch.nn.Module):
         self.nn = Seq(
             Lin(nin, nout),
             LeakyReLU(leak, inplace=True),
-            BatchNorm1d(nout),
+            BatchNorm1d(nout, momentum=bn_momentum),
             Lin(nout, edge_out),
             LeakyReLU(leak, inplace=True),
         )
         self.lin = Lin(edge_in, edge_out)
         #self.bilin = Bilinear(node_in, edge_in, edge_out, bias=True)
-        self.bn = BatchNorm1d(edge_out)
+        self.bn = BatchNorm1d(edge_out, momentum=bn_momentum)
         
     def forward(self, source, target, edge_attr, u, batch):
         
@@ -68,10 +68,11 @@ class NNConvModel(torch.nn.Module):
         self.aggr = self.model_config.get('aggr', 'add')
         self.leak = self.model_config.get('leak', 0.1)
         self.use_bn = self.model_config.get('batch_norm', False)
+        bn_momentum = self.model_config.get('batch_norm_momentum', 0.1)
         
         # perform batch normalization
-        self.bn_node = BatchNorm1d(self.node_in)
-        self.bn_edge = BatchNorm1d(self.edge_in)
+        self.bn_node = BatchNorm1d(self.node_in, momentum=bn_momentum)
+        self.bn_edge = BatchNorm1d(self.edge_in, momentum=bn_momentum)
         
         self.num_mp = self.model_config.get('num_mp', 3)
         nnode_feats = self.node_in
@@ -89,12 +90,13 @@ class NNConvModel(torch.nn.Module):
             noutput = max(2*nnode_feats, 16)
             eoutput = max(2*nedge_feats, 32)
             self.em.append(
-                MetaLayer(EdgeModel(ninput, einput, eoutput, self.leak))
+                MetaLayer(EdgeModel(ninput, einput, eoutput, self.leak, bn_momentum))
             )
             self.nn.append(
                 Seq(
                     Lin(eoutput, eoutput*2),
-                    LeakyReLU(self.leak, inplace=True),
+                    LeakyReLU(self.leak),
+                    BatchNorm1d(eoutput*2, momentum=bn_momentum),
                     Lin(eoutput*2, ninput*noutput)
                 )
             )
@@ -102,7 +104,7 @@ class NNConvModel(torch.nn.Module):
                 NNConv(ninput, noutput, self.nn[i], aggr=self.aggr)
             )
             self.bn.append(
-                BatchNorm1d(noutput)
+                BatchNorm1d(noutput, momentum=bn_momentum)
             )
 
             nnode_feats = noutput
@@ -119,8 +121,8 @@ class NNConvModel(torch.nn.Module):
                                        NodePredModel(nnode_feats, nedge_feats, self.leak)
                                       )
         elif pred_cfg == 'comb':
-            self.predictor = MetaLayer(CombEdgePredModel(nnode_feats, nedge_feats, self.leak), 
-                                       NodePredModel(nnode_feats, nedge_feats, self.leak)
+            self.predictor = MetaLayer(CombEdgePredModel(nnode_feats, nedge_feats, self.leak, bn_momentum=bn_momentum), 
+                                       NodePredModel(nnode_feats, nedge_feats, self.leak, bn_momentum=bn_momentum)
                                       )
         else:
             raise Exception('unrecognized prediction model: ' + pred_cfg)

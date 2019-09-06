@@ -9,7 +9,7 @@ from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid, LeakyReLU,
 
 # final prediction layer
 class EdgePredModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, leak, nout=2):
+    def __init__(self, node_in, edge_in, leak, nout=2, bn_momentum=0.1):
         """
         Basic model for making edge predictions
         
@@ -23,21 +23,41 @@ class EdgePredModel(torch.nn.Module):
 
         self.edge_pred_mlp = Seq(Lin(2*node_in + edge_in, 64),
                                  LeakyReLU(leak),
+                                 BatchNorm1d(64, momentum=bn_momentum),
                                  Lin(64, 32),
                                  LeakyReLU(leak),
+                                 BatchNorm1d(32, momentum=bn_momentum),
                                  Lin(32, 16),
                                  LeakyReLU(leak),
+                                 BatchNorm1d(16, momentum=bn_momentum),
                                  Lin(16,8),
                                  LeakyReLU(leak),
+                                 BatchNorm1d(8, momentum=bn_momentum),
                                  Lin(8,nout)
                                 )
 
     def forward(self, src, dest, edge_attr, u, batch):
         return self.edge_pred_mlp(torch.cat([src, dest, edge_attr], dim=1))
     
+
+class FastEdgePredModel(torch.nn.Module):
+    def __init__(self, node_in, edge_in, leak, nout=2, bn_momentum=0.1):
+        """
+        Model for making edge predicitons without many hidden variables
+        """
+        super(FastEdgePredModel, self).__init__()
+        
+        self.edge_pred_mlp = Seq(Lin(edge_in, nout*4),
+                                 LeakyReLU(leak),
+                                 BatchNorm1d(nout*4, momentum=bn_momentum),
+                                 Lin(nout*4, nout)
+                                )
+        def forward(src, dest, edge_attr, u, batch):
+            return sefl.edge_pred_mlp(edge_attr)
+    
     
 class BilinEdgePredModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, leak, nout=2):
+    def __init__(self, node_in, edge_in, leak, nout=2, bn_momentum=0.1):
         """
         Bilinear model for making edge predictions
         
@@ -81,7 +101,7 @@ class BilinEdgePredModel(torch.nn.Module):
     
 
 class CombEdgePredModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, leak, nout=2, nfeat=32, use_bn=True):
+    def __init__(self, node_in, edge_in, leak, nout=2, nfeat=32, use_bn=True, bn_momentum=0.1):
         """
         Combined model for making edge predictions
         
@@ -101,16 +121,16 @@ class CombEdgePredModel(torch.nn.Module):
         self.mlp = Seq(
             BatchNorm1d(nfeat) if use_bn else Identity(),
             Lin(nfeat, nfeat*2),
-            LeakyReLU(leak, inplace=True),
+            LeakyReLU(leak),
             BatchNorm1d(nfeat*2) if use_bn else Identity(),
             Lin(nfeat*2, nfeat),
-            LeakyReLU(leak, inplace=True),
+            LeakyReLU(leak),
             BatchNorm1d(nfeat) if use_bn else Identity(),
             Lin(nfeat,nfeat//2),
-            LeakyReLU(leak, inplace=True),
+            LeakyReLU(leak),
             BatchNorm1d(nfeat//2) if use_bn else Identity(),
             Lin(nfeat//2, nfeat//4),
-            LeakyReLU(leakinplace=True),
+            LeakyReLU(leak),
             BatchNorm1d(nfeat//4) if use_bn else Identity(),
             Lin(nfeat//4, nout)
         )
@@ -128,7 +148,7 @@ class CombEdgePredModel(torch.nn.Module):
 
     
 class NodePredModel(torch.nn.Module):
-    def __init__(self, node_in, edge_in, leak, nout=2):
+    def __init__(self, node_in, edge_in, leak, nout=2, bn_momentum=0.1):
         """
         Basic model for making node predictions
         
@@ -142,11 +162,42 @@ class NodePredModel(torch.nn.Module):
 
         self.pred_mlp = Seq(Lin(node_in, 32),
                              LeakyReLU(leak),
+                             BatchNorm1d(32, momentum=bn_momentum),
                              Lin(32, 32),
                              LeakyReLU(leak),
+                             BatchNorm1d(32, momentum=bn_momentum),
                              Lin(32, 16),
                              LeakyReLU(leak),
+                             BatchNorm1d(16, momentum=bn_momentum),
                              Lin(16,nout)
+                            )
+
+    def forward(self, x, edge_index, edge_attr, u, batch):
+        # x: [N, F_x], where N is the number of nodes.
+        # edge_index: [2, E] with max entry N - 1.
+        # edge_attr: [E, F_e]
+        # u: [B, F_u]
+        # batch: [N] with max entry B - 1.
+        return self.pred_mlp(x)
+    
+    
+class FastNodePredModel(torch.nn.Module):
+    def __init__(self, node_in, edge_in, leak, nout=2, bn_momentum=0.1):
+        """
+        Basic model for making node predictions
+        
+        parameters:
+            node_in - number of node features coming in
+            edge_in - number of edge features coming in
+            leak - leakiness of leakyrelus
+            nout - number of classes out (default 2)
+        """
+        super(FastNodePredModel, self).__init__()
+
+        self.pred_mlp = Seq(Lin(node_in, 4*nout),
+                             LeakyReLU(leak),
+                             BatchNorm1d(nout*4, momentum=bn_momentum),
+                             Lin(4*nout, nout)
                             )
 
     def forward(self, x, edge_index, edge_attr, u, batch):
