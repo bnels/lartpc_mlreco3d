@@ -121,6 +121,37 @@ def cluster_edge_features(data, clusts, edge_index, cuda=True, device=None):
         e = e.cuda()
     return e
 
+
+def cluster_distance(data, c1, c2):
+    """
+    compute distance between clusters c1 and c2
+    """
+    x1 = get_cluster_voxels(data, c1)
+    x2 = get_cluster_voxels(data, c2)
+    d12 = sp.spatial.distance.cdist(x1, x2,'euclidean')
+    imin = np.argmin(d12)
+    i1, i2 = np.unravel_index(imin, d12.shape)
+    v1 = x1[i1,:] # closest point in c1
+    v2 = x2[i2,:] # closest point in c2
+    disp = v1 - v2 # displacement
+    return np.linalg.norm(disp) # length of displacement
+
+
+def cluster_edge_distance(data, clusts, edge_index, cuda=True, device=None):
+    """
+    Cluster edge distance
+    returned as a pytorch tensor of size (n_edges, 1)
+    """
+    if isinstance(data, torch.Tensor):
+        data = data.cpu().detach().numpy()
+    e = torch.tensor([cluster_distance(data, clusts[edge_index[0,k]], clusts[edge_index[1,k]]) for k in range(edge_index.shape[1])], dtype=torch.float, requires_grad=False)
+    if not device is None:
+        e = e.to(device)
+    elif cuda:
+        e = e.cuda()
+    return e
+
+        
 def edge_feature(data, i, j):
     """
     12-dimensional edge feature based on displacement between two voxels

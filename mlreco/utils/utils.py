@@ -11,6 +11,8 @@ def to_numpy(s):
         return s.cpu().detach().numpy()
     elif isinstance(s, scn.SparseConvNetTensor):
         return torch.cat([s.get_spatial_locations().float(), s.features.cpu()], dim=1).detach().numpy()
+    elif isinstance(s, np.ndarray):
+        return s
     else:
         raise Exception("Unknown return type %s" % type(s))
 

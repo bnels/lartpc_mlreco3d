@@ -11,7 +11,7 @@ from mlreco.utils.gnn.cluster import get_cluster_batch, get_cluster_label, form_
 from mlreco.utils.gnn.primary import assign_primaries, analyze_primaries
 from mlreco.utils.gnn.network import complete_graph
 from mlreco.utils.gnn.compton import filter_compton
-from mlreco.utils.gnn.data import cluster_vtx_features, cluster_edge_features, edge_assignment
+from mlreco.utils.gnn.data import cluster_vtx_features, cluster_edge_features, edge_assignment, cluster_edge_distance
 from mlreco.utils.gnn.data import node_primary_assignment
 from mlreco.utils.gnn.evaluation import secondary_matching_vox_efficiency, secondary_matching_vox_efficiency3
 from mlreco.utils.gnn.evaluation import DBSCAN_cluster_metrics2, assign_clusters_UF, primary_id_metrics
@@ -43,6 +43,9 @@ class CombModel(torch.nn.Module):
         
         self.remove_compton = self.model_config.get('remove_compton', True)
         self.compton_thresh = self.model_config.get('compton_thresh', 30)
+        
+        # decide if only to use MST edges
+        self.mst_edges_only = self.model_config.get('mst_edges_only', False)
             
         # extract the model to use
         model = gnn_model_construct(self.model_config.get('name', 'edge_only'))
@@ -86,15 +89,33 @@ class CombModel(torch.nn.Module):
 
         # obtain vertex features
         x = cluster_vtx_features(data[0], clusts, device=device)
+        
+        # if only using mst edges, do filtering here:
+        # print(edge_index.shape)
+        if self.mst_edges_only:
+            # compute distance-based MST
+            de = cluster_edge_distance(data[0], clusts, edge_index, device=device) # edge distance
+            # index of MST edges
+            mst_inds = get_mst_inds(edge_index, -de, len(clusts))
+            # mst edges
+            edge_index = edge_index[:,mst_inds]
+            # print(edge_index)
+        # print(edge_index.shape)
+        
         # obtain edge features
         e = cluster_edge_features(data[0], clusts, edge_index, device=device)
+        
         # get x batch
         xbatch = torch.tensor(batch).to(device)
         
         # get output
         out = self.predictor(x, edge_index, e, xbatch)
-        
-        return out
+        # print(len(clusts))
+        return {
+            'clusts': clusts,
+            'edge_index': edge_index,
+            **out
+        }
     
 def get_mst_inds(edge_index, edge_wt, n):
     """
@@ -154,6 +175,7 @@ class CombChannelLoss(torch.nn.Module):
         out:
             dictionary output from GNN Model
             keys:
+                'edge_index': edges used
                 'edge_pred': predicted edge weights from model forward
         data:
             data[0] - DBSCAN data
@@ -173,7 +195,9 @@ class CombChannelLoss(torch.nn.Module):
         ngpus = len(clusters)
         for i in range(ngpus):
             edge_pred = out['edge_pred'][i]
+            # print(edge_pred.shape)
             node_pred = out['node_pred'][i]
+            # print(node_pred.shape)
             data0 = clusters[i]
             data1 = groups[i]
             data2 = primary[i]
@@ -183,19 +207,11 @@ class CombChannelLoss(torch.nn.Module):
             # first decide what true edges should be
             # need to form graph, then pass through GNN
             # clusts = form_clusters(data0)
-            clusts = form_clusters_new(data0)
-
-
+            # clusts = form_clusters_new(data0)
+            
             # remove compton clusters
             # if no cluster fits this condition, return
-            if self.remove_compton:
-                selection = filter_compton(clusts, self.compton_thresh) # non-compton looking clusters
-                if not len(selection):
-                    ttotal_loss += self.lossfn(edge_pred, edge_pred)
-                    totalacc += 1.
-                    continue
-
-                clusts = clusts[selection]
+            clusts = out['clusts'] # load cached clusters
 
             # process group data
             # data_grp = process_group_data(data1, data0)
@@ -203,7 +219,8 @@ class CombChannelLoss(torch.nn.Module):
 
             # form graph
             batch = get_cluster_batch(data0, clusts)
-            edge_index = complete_graph(batch, device=device)
+            # edge_index = complete_graph(batch, device=device)
+            edge_index = out['edge_index'] # load cached edge index
 
             if not edge_index.shape[0]:
                 total_loss += self.lossfn(edge_pred, edge_pred)
@@ -214,6 +231,8 @@ class CombChannelLoss(torch.nn.Module):
             ntrue += len(np.unique(group))
 
             # determine true assignments
+            # print(edge_index.shape)
+            # print(len(clusts))
             edge_assn = edge_assignment(edge_index, batch, group, device=device, dtype=torch.long)
             edge_assn = edge_assn.view(-1)
             true_on += torch.sum(edge_assn).detach().cpu().item()
