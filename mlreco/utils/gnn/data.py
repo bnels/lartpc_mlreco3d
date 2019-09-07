@@ -185,6 +185,8 @@ def edge_assignment(edge_index, batches, groups, cuda=True, dtype=torch.float, b
     edge_index: torch tensor of edges
     batches: torch tensor of batch id for each node
     groups: torch tensor of group ids for each node
+    
+    returns 1 if edge should be on, 0 if edge should be off
     """
     if isinstance(batches, torch.Tensor):
         batches = batches.cpu().detach().numpy()

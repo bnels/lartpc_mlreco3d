@@ -185,6 +185,7 @@ class CombChannelLoss(torch.nn.Module):
         total_loss, total_acc = 0., 0.
         mst_loss = 0.
         ari, ami, sbd, pur, eff = 0., 0., 0., 0., 0.
+        arib, amib, sbdb, purb, effb = 0., 0., 0., 0., 0.
         ppur, peff, spur, seff = 0., 0., 0., 0.
         node_loss = 0.
         edge_loss = 0.
@@ -275,6 +276,21 @@ class CombChannelLoss(torch.nn.Module):
             sbd += sbd0
             pur += pur0
             eff += eff0
+            
+            # compute best possible clustering on edge set
+            ebest = edge_assn.float()
+            cs_best = assign_clusters_UF(edge_index, ebest, len(clusts), thresh=0.5)
+            ari1, ami1, sbd1, pur1, eff1 = DBSCAN_cluster_metrics2(
+                cs_best,
+                clusts,
+                group
+            )
+            arib += ari1
+            amib += ami1
+            sbdb += sbd1
+            purb += pur1
+            effb += eff1
+            
 
             edge_ct += edge_index.shape[1]
             
@@ -287,6 +303,11 @@ class CombChannelLoss(torch.nn.Module):
             'SBD': sbd/ngpus,
             'purity': pur/ngpus,
             'efficiency': eff/ngpus,
+            'ARI_best': arib/ngpus,
+            'AMI_best': amib/ngpus,
+            'SBD_best': sbdb/ngpus,
+            'purity_best': purb/ngpus,
+            'efficiency_best': effb/ngpus,
             'accuracy': sbd/ngpus, # sbd
             'loss': total_loss/ngpus,
             'node_loss': node_loss/ngpus,
